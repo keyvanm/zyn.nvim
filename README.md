@@ -9,8 +9,7 @@ The `zyn` CLI guards the call with `type(Zyn) == 'table'`, so users without this
 ## Installation
 
 ```lua
--- lazy.nvim
-{ "keyvanm/zyn.nvim" }
+vim.pack.add({ "https://github.com/keyvanm/giga.nvim" })
 ```
 
 No `setup()` required — defaults are applied on load.
