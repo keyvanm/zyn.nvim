@@ -20,19 +20,21 @@ No `setup()` required — defaults are applied on load.
 
 **1. Window-manager focus** (Hyprland / Sway)
 
-| Detected env var               | Action                                                        |
-| ------------------------------ | ------------------------------------------------------------- |
-| `$HYPRLAND_INSTANCE_SIGNATURE` | `hyprctl dispatch focuswindow address:<terminal-window-addr>` |
-| `$SWAYSOCK`                    | `swaymsg [pid=<terminal-pid>] focus`                          |
+| Detected env var               | Action                                                                       |
+| ------------------------------ | ---------------------------------------------------------------------------- |
+| `$HYPRLAND_INSTANCE_SIGNATURE` | `hyprctl dispatch 'hl.dsp.focus({ window = "address:<terminal-addr>" })'`    |
+| `$SWAYSOCK`                    | `swaymsg [pid=<terminal-pid>] focus`                                         |
 
-The terminal's window is resolved once at plugin load: walk up nvim's process tree, match each PID against the WM's known windows (`hyprctl clients -j` or `swaymsg -t get_tree`), take the first hit. Cached for the life of the session — both WMs' focus calls switch workspace and focus the window in one shot, so moving the terminal across workspaces later still works without re-detection.
+The Hyprland command uses the Lua-config dispatcher form introduced in 0.55; the legacy `focuswindow address:X` syntax no longer parses.
+
+The terminal's window is resolved once at plugin load: walk up nvim's process tree, match each PID against the WM's known windows (`hyprctl clients -j` or `swaymsg -t get_tree`), take the first hit. If the walk finds no match — typically because a multiplexer server (e.g. `zellij-server`) is daemonized and reparented to init, hiding the terminal from nvim's ancestry — fall back to the currently active/focused window, which at plugin-load time is the terminal that just spawned nvim. Cached for the life of the session — both WMs' focus calls switch workspace and focus the window in one shot, so moving the terminal across workspaces later still works without re-detection.
 
 **2. Multiplexer pane focus** (zellij / tmux)
 
-| Detected env var  | Action                                             |
-| ----------------- | -------------------------------------------------- |
-| `$ZELLIJ_PANE_ID` | `zellij action focus-pane-with-id $ZELLIJ_PANE_ID` |
-| `$TMUX_PANE`      | `tmux select-pane -t $TMUX_PANE`                   |
+| Detected env var  | Action                                           |
+| ----------------- | ------------------------------------------------ |
+| `$ZELLIJ_PANE_ID` | `zellij action focus-pane-id $ZELLIJ_PANE_ID`    |
+| `$TMUX_PANE`      | `tmux select-pane -t $TMUX_PANE`                 |
 
 If neither layer detects anything, `Zyn.focus()` is a silent no-op.
 

@@ -7,7 +7,7 @@ local M = {}
 local function mux_focus_cmd()
     local zellij_pane = os.getenv("ZELLIJ_PANE_ID")
     if zellij_pane then
-        return { "zellij", "action", "focus-pane-with-id", zellij_pane }
+        return { "zellij", "action", "focus-pane-id", zellij_pane }
     end
 
     local tmux_pane = os.getenv("TMUX_PANE")
@@ -61,6 +61,14 @@ end
 -- of the terminal across workspaces don't invalidate this address.
 local hyprland_address = nil
 
+local function hyprland_active_address()
+    local out = vim.fn.system({ "hyprctl", "activewindow", "-j" })
+    if vim.v.shell_error ~= 0 then return nil end
+    local ok, win = pcall(vim.json.decode, out)
+    if not ok or type(win) ~= "table" then return nil end
+    return win.address
+end
+
 local function detect_hyprland_address()
     if not os.getenv("HYPRLAND_INSTANCE_SIGNATURE") then
         return nil
@@ -78,7 +86,12 @@ local function detect_hyprland_address()
         end
     end
 
+    -- Proc-walk fails when an intermediate process is daemonized and reparented
+    -- to init (notably zellij-server) — the terminal's PID is no longer an
+    -- ancestor of nvim. Fall back to the active window, which at plugin-load
+    -- time is the terminal that just spawned nvim.
     return walk_up_until(function(pid) return pid_to_addr[pid] end)
+        or hyprland_active_address()
 end
 
 -- ============================================================================
@@ -87,12 +100,21 @@ end
 
 local sway_pid = nil
 
--- Recursively collect all PIDs that own a window in the sway tree.
-local function collect_sway_pids(node, set)
-    if type(node) ~= "table" then return end
-    if node.pid then set[node.pid] = true end
-    for _, n in ipairs(node.nodes or {}) do collect_sway_pids(n, set) end
-    for _, n in ipairs(node.floating_nodes or {}) do collect_sway_pids(n, set) end
+-- Recursively collect all window PIDs in the sway tree, and remember which
+-- one is currently focused (used as a fallback when proc-walk fails).
+local function scan_sway_tree(node, set, focused)
+    if type(node) ~= "table" then return focused end
+    if node.pid then
+        set[node.pid] = true
+        if node.focused then focused = node.pid end
+    end
+    for _, n in ipairs(node.nodes or {}) do
+        focused = scan_sway_tree(n, set, focused)
+    end
+    for _, n in ipairs(node.floating_nodes or {}) do
+        focused = scan_sway_tree(n, set, focused)
+    end
+    return focused
 end
 
 local function detect_sway_pid()
@@ -106,12 +128,15 @@ local function detect_sway_pid()
     if not ok then return nil end
 
     local pids = {}
-    collect_sway_pids(tree, pids)
+    local focused_pid = scan_sway_tree(tree, pids, nil)
 
+    -- See the Hyprland fallback note: daemonized multiplexer servers hide the
+    -- terminal from nvim's ancestry. The focused window at plugin-load time is
+    -- the terminal that just spawned nvim.
     return walk_up_until(function(pid)
         if pids[pid] then return pid end
         return nil
-    end)
+    end) or focused_pid
 end
 
 -- ============================================================================
@@ -120,11 +145,14 @@ end
 
 function M.run()
     if hyprland_address then
+        -- Hyprland >= 0.55 routes `hyprctl dispatch` args through a Lua eval
+        -- wrapped in `return hl.dispatch(<args>)`. The old `focuswindow
+        -- address:X` form is no longer parseable; the dispatch arg must be a
+        -- single Lua expression evaluating to a dispatcher.
         vim.fn.jobstart({
             "hyprctl",
             "dispatch",
-            "focuswindow",
-            "address:" .. hyprland_address,
+            'hl.dsp.focus({ window = "address:' .. hyprland_address .. '" })',
         })
     elseif sway_pid then
         vim.fn.jobstart({
