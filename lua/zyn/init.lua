@@ -22,6 +22,14 @@ function Zyn.focus()
     focus.run()
 end
 
+--- Shell out to the `zyn` CLI to open one or more paths in the master session.
+--- Accepts a string or a list of strings. Detached so it survives this nvim.
+---@param paths string|string[]
+function Zyn.open(paths)
+    local args = type(paths) == "table" and paths or { paths }
+    vim.fn.jobstart(vim.list_extend({ "zyn" }, args), { detach = true })
+end
+
 --- Toggle autofocus at runtime.
 function Zyn.toggle_focus()
     Zyn.options.autofocus = not Zyn.options.autofocus

@@ -55,7 +55,21 @@ The CLI also has its own opt-out — `zyn --no-focus <file>` or `ZYN_NO_FOCUS=1`
 ```lua
 require("zyn").focus()         -- focus the pane (no-op if disabled)
 require("zyn").toggle_focus()  -- flip autofocus
+require("zyn").open(paths)     -- shell out to `zyn` with a path or list of paths
 require("zyn").setup(opts)     -- override defaults
+```
+
+### Wiring other plugins through `zyn`
+
+`Zyn.open` is the hook for any in-editor file picker that would otherwise open files in the current nvim. The canonical case is [yazi.nvim](https://github.com/mikavilpas/yazi.nvim), whose floating-popup yazi otherwise opens picks inside the popup's host nvim:
+
+```lua
+require("yazi").setup({
+    open_file_function = function(chosen_file) require("zyn").open(chosen_file) end,
+    hooks = {
+        yazi_opened_multiple_files = function(chosen_files) require("zyn").open(chosen_files) end,
+    },
+})
 ```
 
 ---
